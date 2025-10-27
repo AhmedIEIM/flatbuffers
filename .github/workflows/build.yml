@@ -2,21 +2,24 @@ name: CI
 permissions: read-all
 
 on:
-  # For manual tests.
   workflow_dispatch:
   push:
     tags:
-      - "*" # new tag version, like `0.8.4` or else
+      - "*"
     branches:
       - master
+    paths-ignore:
+      - 'compile_commands/**'   # avoid CI loop when we commit compile_commands.json
   pull_request:
     branches:
       - master
   schedule:
-    # Run daily at 4:45 A.M. to catch dependencies that break us.
     - cron: '45 4 * * *'
 
 jobs:
+  # -----------------------------
+  # ORIGINAL JOBS (unchanged)
+  # -----------------------------
   build-linux:
     permissions:
       contents: write
@@ -46,7 +49,6 @@ jobs:
       with:
         name: Linux flatc binary ${{ matrix.cxx }}
         path: flatc
-    # Below if only for release.
     - name: Zip file
       if: startsWith(github.ref, 'refs/tags/')
       run: zip Linux.flatc.binary.${{ matrix.cxx }}.zip flatc
@@ -107,10 +109,8 @@ jobs:
         std: [11, 14, 17, 20, 23]
         cxx: [g++-13, clang++-18]
         exclude:
-          # Clang++15 10.3.0 stdlibc++ doesn't fully support std 23
           - cxx: clang++-18
             std: 23
-
     steps:
     - uses: actions/checkout@v3
     - name: cmake
@@ -174,7 +174,6 @@ jobs:
       with:
         name: Windows flatc binary
         path: Release\flatc.exe
-    # Below if only for release.
     - name: Zip file
       if: startsWith(github.ref, 'refs/tags/')
       run: move Release/flatc.exe . && Compress-Archive flatc.exe Windows.flatc.binary.zip
@@ -197,9 +196,7 @@ jobs:
         configuration: [
           '',
           '-p:UnsafeByteBuffer=true',
-          # Fails two tests currently.
-          #'-p:EnableSpanT=true,UnsafeByteBuffer=true'
-          ]
+        ]
     steps:
     - uses: actions/checkout@v3
     - name: Setup .NET Core SDK
@@ -251,7 +248,6 @@ jobs:
       with:
         name: Mac flatc binary Intel
         path: Release/flatc
-    # Below if only for release.
     - name: Zip file
       if: startsWith(github.ref, 'refs/tags/')
       run: mv Release/flatc . && zip MacIntel.flatc.binary.zip flatc
@@ -294,7 +290,6 @@ jobs:
       with:
         name: Mac flatc binary Universal
         path: Release/flatc
-    # Below if only for release.
     - name: Zip file
       if: startsWith(github.ref, 'refs/tags/')
       run: mv Release/flatc . && zip Mac.flatc.binary.zip flatc
@@ -310,7 +305,7 @@ jobs:
 
   build-android:
    name: Build Android (on Linux)
-   if: false #disabled due to continual failure
+   if: false
    runs-on: ubuntu-24.04
    steps:
    - uses: actions/checkout@v3
@@ -394,11 +389,6 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
-      # Force Xcode 14.3 since Xcode 15 doesnt support older versions of
-      # kotlin. For Xcode 15, kotlin should be bumpped to 1.9.10
-      # https://stackoverflow.com/a/77150623
-      # For now, run with macos-13 which has this 14.3 installed:
-      # https://github.com/actions/runner-images/blob/main/images/macos/macos-13-Readme.md#xcode
     - name: Set up Xcode version
       run: sudo xcode-select -s /Applications/Xcode_14.3.app/Contents/Developer
     - name: set up Java
@@ -419,7 +409,7 @@ jobs:
 
   build-kotlin-linux:
     name: Build Kotlin Linux
-    if: false #disabled due to continual failure
+    if: false
     runs-on: ubuntu-24.04
     steps:
     - name: Checkout
@@ -438,9 +428,6 @@ jobs:
        echo "${PWD}" >> $GITHUB_PATH
     - name: Build
       working-directory: kotlin
-      # we are using docker's version of gradle
-      # so no need for wrapper validation or user
-      # gradlew
       run: gradle jvmMainClasses jvmTest jsTest jsBrowserTest
 
   build-rust-linux:
@@ -467,7 +454,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: flatc
-      # FIXME: make test script not rely on flatc
       run: cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_INSTALL=OFF -DFLATBUFFERS_BUILD_FLATLIB=OFF -DFLATBUFFERS_BUILD_FLATHASH=OFF -DFLATBUFFERS_STRICT_MODE=ON . && make -j
     - name: test
       working-directory: tests
@@ -479,7 +465,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: flatc
-      # FIXME: make test script not rely on flatc
       run: cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_INSTALL=OFF -DFLATBUFFERS_BUILD_FLATLIB=OFF -DFLATBUFFERS_BUILD_FLATHASH=OFF -DFLATBUFFERS_STRICT_MODE=ON . && make -j
     - name: test
       working-directory: tests
@@ -491,7 +476,6 @@ jobs:
    steps:
    - uses: actions/checkout@v3
    - name: flatc
-     # FIXME: make test script not rely on flatc
      run: cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_INSTALL=OFF -DFLATBUFFERS_BUILD_FLATLIB=OFF -DFLATBUFFERS_BUILD_FLATHASH=OFF -DFLATBUFFERS_STRICT_MODE=ON . && make -j
    - name: test
      working-directory: tests
@@ -504,7 +488,6 @@ jobs:
     strategy:
       matrix:
         swift: ["5.9", "5.10", "6.1"]
-    # Only 22.04 has swift at the moment https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md?plain=1#L30
     runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v3
@@ -550,7 +533,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: flatc
-      # FIXME: make test script not rely on flatc
       run: cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_INSTALL=OFF -DFLATBUFFERS_BUILD_FLATLIB=OFF -DFLATBUFFERS_BUILD_FLATHASH=OFF . && make -j
     - name: pnpm
       run: npm install -g pnpm esbuild
@@ -572,7 +554,6 @@ jobs:
         with:
           sdk: stable
       - name: flatc
-        # FIXME: make test script not rely on flatc
         run: cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_INSTALL=OFF -DFLATBUFFERS_BUILD_FLATLIB=OFF -DFLATBUFFERS_BUILD_FLATHASH=OFF -DFLATBUFFERS_STRICT_MODE=ON . && make -j
       - name: test
         working-directory: tests
@@ -584,7 +565,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: flatc
-      # FIXME: make test script not rely on flatc
       run: cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_INSTALL=OFF -DFLATBUFFERS_BUILD_FLATLIB=OFF -DFLATBUFFERS_BUILD_FLATHASH=OFF . && make -j
     - uses: jiro4989/setup-nim-action@v1
     - name: install library
@@ -637,11 +617,170 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [release-digests]
     permissions:
-      actions: read   # To read the workflow path.
-      id-token: write # To sign the provenance.
-      contents: write # To add assets to a release.
+      actions: read
+      id-token: write
+      contents: write
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.2.1
     with:
       base64-subjects: "${{ needs.release-digests.outputs.digests }}"
-      upload-assets: true # Optional: Upload to a new release
-      compile-generator: true # Workaround for https://github.com/slsa-framework/slsa-github-generator/issues/1163
+      upload-assets: true
+      compile-generator: true
+
+  # -----------------------------------------------------------------
+  # NEW: Windows MSYS2 build + Ghidra artifacts + commit compile_commands.json + SonarCloud
+  # -----------------------------------------------------------------
+  sonar-msys2:
+    name: Sonar + MSYS2 (Windows, Ninja)
+    runs-on: windows-latest
+    permissions:
+      contents: write   # needed to push compile_commands.json
+    env:
+      BUILD_DIR: build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Install MSYS2 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          msystem: MINGW64
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-binutils
+
+      - name: Configure (Ninja + export compile_commands.json)
+        shell: msys2 {0}
+        run: >
+          cmake -S . -B "${BUILD_DIR}" -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DFLATBUFFERS_BUILD_TESTS=ON
+          -DFLATBUFFERS_BUILD_FLATLIB=ON
+          -DFLATBUFFERS_BUILD_FLATHASH=OFF
+          -DFLATBUFFERS_STRICT_MODE=ON
+          -DFLATBUFFERS_STATIC_FLATC=ON
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build "${BUILD_DIR}" --config Release -j2
+
+      - name: Test
+        shell: msys2 {0}
+        run: ctest --output-on-failure -C Release --test-dir "${BUILD_DIR}"
+
+      # --- Package full/stripped/symbols for Ghidra ---
+      - name: Package (full + stripped + symbols)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p out/full/bin out/full/lib out/full/include
+          mkdir -p out/stripped/bin out/stripped/lib
+          mkdir -p out/symbols
+
+          # Headers
+          [ -d include ] && cp -R include/ out/full/include/ || true
+
+          # Libraries (static)
+          find "${BUILD_DIR}" -maxdepth 3 -type f -name 'libflatbuffers*.a' -not -path '*/CMakeFiles/*' -exec cp -f {} out/full/lib/ \; || true
+
+          # Binaries (flatc + tests)
+          find "${BUILD_DIR}" -type f \( -iname '*.exe' -o -iname '*.dll' \) -not -path '*/CMakeFiles/*' -exec cp -f {} out/full/bin/ \; || true
+
+          # Stripped copies
+          cp -f out/full/lib/* out/stripped/lib/ 2>/dev/null || true
+          cp -f out/full/bin/* out/stripped/bin/ 2>/dev/null || true
+
+          # Strip static libs (remove DWARF)
+          find out/stripped/lib -type f -name '*.a' -exec strip -g {} \; || true
+
+          # Strip EXE/DLL, create .debug side files
+          shopt -s nullglob
+          for f in out/stripped/bin/*.exe out/stripped/bin/*.dll; do
+            base="$(basename "$f")"
+            if [ -f "out/full/bin/$base" ]; then
+              objcopy --only-keep-debug "out/full/bin/$base" "out/symbols/$base.debug" || true
+            else
+              objcopy --only-keep-debug "$f" "out/symbols/$base.debug" || true
+            fi
+            strip --strip-debug "$f" || true
+            if [ -f "out/symbols/$base.debug" ]; then
+              objcopy --add-gnu-debuglink="out/symbols/$base.debug" "$f" || true
+            fi
+          done
+
+          echo "---- FULL ----";     find out/full     -maxdepth 4 -type f -print || true
+          echo "---- STRIPPED ----"; find out/stripped -maxdepth 4 -type f -print || true
+          echo "---- SYMBOLS ----";  find out/symbols  -maxdepth 4 -type f -print || true
+
+      - name: Upload artifact (full symbols)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghidra-full-windows-msys2-Release
+          path: out/full/**
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload artifact (stripped)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghidra-stripped-windows-msys2-Release
+          path: out/stripped/**
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload artifact (separate .debug symbols)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghidra-symbols-windows-msys2-Release
+          path: out/symbols/**
+          if-no-files-found: warn
+          retention-days: 30
+
+      # --- Auto-commit compile_commands.json (safe when unchanged) ---
+      - name: Commit compile_commands.json into repo
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
+        shell: pwsh
+        env:
+          TARGET_DIR: compile_commands/windows-msys2
+        run: |
+          $ErrorActionPreference = "Stop"
+          $buildDir = "$env:GITHUB_WORKSPACE\${{ env.BUILD_DIR }}"
+          $src = Join-Path $buildDir 'compile_commands.json'
+          if (!(Test-Path $src)) {
+            Write-Host "compile_commands.json not found at $src"
+            exit 0
+          }
+          $outDir = Join-Path $env:GITHUB_WORKSPACE $env:TARGET_DIR
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          Copy-Item $src (Join-Path $outDir 'compile_commands.json') -Force
+
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config --global --add safe.directory $env:GITHUB_WORKSPACE
+
+          git add "$env:TARGET_DIR/compile_commands.json"
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "[skip ci] update compile_commands.json ($env:TARGET_DIR)"
+            git push
+          } else {
+            Write-Host "No changes in compile_commands.json; nothing to commit."
+          }
+          exit 0
+
+      # --- SonarCloud scan (relies on sonar-project.properties at repo root) ---
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            --define sonar.sources=.
+            --define sonar.exclusions=**/.scannerwork/**,**/${{ env.BUILD_DIR }}/**,**/docs/**,**/benchmarks/**,**/android/**
+            --define sonar.cfamily.compile-commands=${{ env.BUILD_DIR }}/compile_commands.json
+            --define sonar.verbose=true
