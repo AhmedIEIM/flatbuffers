@@ -674,7 +674,20 @@ jobs:
         shell: msys2 {0}
         run: ctest --output-on-failure -C Release --test-dir "${BUILD_DIR}"
 
-      # --- Package full/stripped/symbols for Ghidra ---
+      # ---------- Build Java so Sonar has binaries ----------
+      - name: Set up Java (for Java analysis)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build Java module (produce target/classes)
+        shell: pwsh
+        run: |
+          mvn -v
+          mvn -B -q -DskipTests package -f java/pom.xml
+
+      # ---------- Package artifacts for Ghidra (unchanged) ----------
       - name: Package (full + stripped + symbols)
         shell: msys2 {0}
         run: |
@@ -683,23 +696,14 @@ jobs:
           mkdir -p out/stripped/bin out/stripped/lib
           mkdir -p out/symbols
 
-          # Headers
           [ -d include ] && cp -R include/ out/full/include/ || true
-
-          # Libraries (static)
           find "${BUILD_DIR}" -maxdepth 3 -type f -name 'libflatbuffers*.a' -not -path '*/CMakeFiles/*' -exec cp -f {} out/full/lib/ \; || true
-
-          # Binaries (flatc + tests)
           find "${BUILD_DIR}" -type f \( -iname '*.exe' -o -iname '*.dll' \) -not -path '*/CMakeFiles/*' -exec cp -f {} out/full/bin/ \; || true
 
-          # Stripped copies
           cp -f out/full/lib/* out/stripped/lib/ 2>/dev/null || true
           cp -f out/full/bin/* out/stripped/bin/ 2>/dev/null || true
-
-          # Strip static libs (remove DWARF)
           find out/stripped/lib -type f -name '*.a' -exec strip -g {} \; || true
 
-          # Strip EXE/DLL, create .debug side files
           shopt -s nullglob
           for f in out/stripped/bin/*.exe out/stripped/bin/*.dll; do
             base="$(basename "$f")"
@@ -713,10 +717,6 @@ jobs:
               objcopy --add-gnu-debuglink="out/symbols/$base.debug" "$f" || true
             fi
           done
-
-          echo "---- FULL ----";     find out/full     -maxdepth 4 -type f -print || true
-          echo "---- STRIPPED ----"; find out/stripped -maxdepth 4 -type f -print || true
-          echo "---- SYMBOLS ----";  find out/symbols  -maxdepth 4 -type f -print || true
 
       - name: Upload artifact (full symbols)
         uses: actions/upload-artifact@v4
@@ -742,7 +742,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      # --- Auto-commit compile_commands.json (safe when unchanged) ---
+      # ---------- Commit compile_commands.json ----------
       - name: Commit compile_commands.json into repo
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
         shell: pwsh
@@ -750,12 +750,8 @@ jobs:
           TARGET_DIR: compile_commands/windows-msys2
         run: |
           $ErrorActionPreference = "Stop"
-          $buildDir = "$env:GITHUB_WORKSPACE\${{ env.BUILD_DIR }}"
-          $src = Join-Path $buildDir 'compile_commands.json'
-          if (!(Test-Path $src)) {
-            Write-Host "compile_commands.json not found at $src"
-            exit 0
-          }
+          $src = Join-Path "$env:GITHUB_WORKSPACE\${{ env.BUILD_DIR }}" 'compile_commands.json'
+          if (!(Test-Path $src)) { Write-Host "compile_commands.json not found"; exit 0 }
           $outDir = Join-Path $env:GITHUB_WORKSPACE $env:TARGET_DIR
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           Copy-Item $src (Join-Path $outDir 'compile_commands.json') -Force
@@ -772,9 +768,8 @@ jobs:
           } else {
             Write-Host "No changes in compile_commands.json; nothing to commit."
           }
-          exit 0
 
-      # --- SonarCloud scan (relies on sonar-project.properties at repo root) ---
+      # ---------- SonarCloud scan ----------
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v6
         env:
@@ -782,6 +777,8 @@ jobs:
         with:
           args: >
             --define sonar.sources=.
-            --define sonar.exclusions=**/.scannerwork/**,**/${{ env.BUILD_DIR }}/**,**/docs/**,**/benchmarks/**,**/android/**
+            --define sonar.sourceEncoding=UTF-8
             --define sonar.cfamily.compile-commands=${{ env.BUILD_DIR }}/compile_commands.json
+            --define sonar.java.binaries=java/target/classes,java/target/test-classes
+            --define sonar.exclusions=**/.scannerwork/**,**/${{ env.BUILD_DIR }}/**,**/docs/**,**/benchmarks/**,**/android/**
             --define sonar.verbose=true
